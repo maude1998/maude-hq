@@ -686,6 +686,7 @@ function importDraftPack(file) {
 function applyUpdatesText(text) {
     try {
       const j = JSON.parse(text);
+      snapImport();
       let drafts = 0, tasks = 0, events = 0, notes = 0;
       const applyDraft = d => { const t = DB.tasks.find(x => x.status !== 'done' && x.title.toLowerCase().includes(String(d.match).toLowerCase())); if (t && d.text) { t.draft = d.text; drafts++; } };
       if (Array.isArray(j)) j.forEach(applyDraft);
@@ -701,7 +702,13 @@ function applyUpdatesText(text) {
         });
         (j.events || []).forEach(ne => {
           if (!ne.title || !ne.date) return;
+          /* confidentiality: client numbers live in notes, never in titles */
+          const num = String(ne.title).match(/\d{3,}/);
+          if (num) { ne.title = scrubEvTitle(ne.title) || ne.title; if (!(ne.notes || '').includes(num[0])) ne.notes = ((ne.notes ? ne.notes + ' ' : '') + 'Client #' + num[0]).trim(); }
           if (DB.events.some(x => x.title.toLowerCase() === ne.title.toLowerCase() && x.date === ne.date && (x.time || '') === (ne.time || ''))) return;
+          /* one appointment slot cannot hold two patient events — merge instead of duplicating */
+          const clash = ne.time && DB.events.find(x => x.date === ne.date && x.time === ne.time && (x.category === 'patient' || ne.category === 'patient'));
+          if (clash) { if (num && !(clash.notes || '').includes(num[0])) { clash.notes = ((clash.notes ? clash.notes + ' ' : '') + 'Client #' + num[0]).trim(); } return; }
           DB.events.push({ id: uid(), title: ne.title, date: ne.date, time: ne.time || '', endTime: ne.endTime || '', space: ne.space || 'personal', category: ne.category || 'other', location: ne.location || '', notes: ne.notes || '' });
           events++;
         });
@@ -1724,9 +1731,12 @@ function viewDrop() {
         <button class="qa-go" data-act="dz-go" id="dz-go" title="Turns your paste into tasks, diary items and drafts">✨ Sort it for me</button>
       </div>
     </div>
+    ${(() => { try { const s = JSON.parse(localStorage.getItem('maudehq_undo') || '[]'); const l = s[s.length - 1]; return (l && Date.now() - l.at < 86400e3) ? `<div style="margin-top:10px"><button class="chip" data-act="undo-import" title="Puts tasks and diary back exactly as they were before the last import">↩ Undo last import (${new Date(l.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })})</button></div>` : ''; } catch (e) { return ''; } })()}
     <div id="dz-out"></div>
   </div>`;
 }
+function snapImport() { try { const s = JSON.parse(localStorage.getItem('maudehq_undo') || '[]'); s.push({ at: Date.now(), tasks: JSON.parse(JSON.stringify(DB.tasks)), events: JSON.parse(JSON.stringify(DB.events)) }); while (s.length > 3) s.shift(); localStorage.setItem('maudehq_undo', JSON.stringify(s)); } catch (e) {} }
+const scrubEvTitle = t => String(t || '').replace(/\s*[—–|:-]?\s*(Client\s*#?\s*\d{2,}|#\d{2,}|\b\d{3,}\b)\s*/gi, ' ').replace(/\s{2,}/g, ' ').trim();
 async function dropSort() {
   const ta = $('#dz-ta'); if (!ta || !ta.value.trim()) { toast('Paste or type something first'); return; }
   if (!DB.settings.apiKey) { toast('This needs your AI key (Settings) — or use “Copy for Claude instead”'); return; }
@@ -1737,7 +1747,7 @@ async function dropSort() {
       headers: { 'content-type': 'application/json', 'x-api-key': DB.settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
         model: DB.settings.model || 'claude-sonnet-5', max_tokens: 4000,
-        system: 'You convert pasted content into planner updates for Maude Calveley (aesthetics doctor, Ouronyx London). Today is ' + todayStr() + '. Output ONLY valid JSON, no commentary, no code fences: {"tasks":[{"title":"...","space":"work|personal","due":"YYYY-MM-DD or omit","priority":"high|med|low","tag":"patients|press|marketing|admin|medical|family|friends|home","est":minutes,"notes":"who asked, what exactly, any deadline","steps":["only for tasks over ~30 min: 2-5 tiny steps, each startable in under 10 minutes"],"draft":"if this is a message needing a reply, draft it","context":""}],"events":[{"title":"...","date":"YYYY-MM-DD","time":"HH:MM or omit","space":"work|personal","category":"work|medical|social|family|other","location":"","notes":""}]}. Extract every distinct action and appointment. She has ADHD: big tasks MUST come pre-broken into small steps so she can start little by little. For every task created from a message/thread, fill the "context" field with 2-3 sentences of background: who the person is, what the thread history says, and what tone the reply needs. Drafts must follow this voice profile exactly:\n' + (DB.settings.style || DEFAULT_STYLE) + '\n\nHer people/tone notes:\n' + (DB.settings.people || PEOPLE_DEFAULT),
+        system: 'You convert pasted content into planner updates for Maude Calveley (aesthetics doctor, Ouronyx London). Today is ' + todayStr() + '. PATIENT CONFIDENTIALITY, non-negotiable: appointment/diary event titles carry the appointment TYPE only (e.g. Initial Consultation, Refinement, Balance Consultation, Clinic blocked time) - NEVER a patient name or client number in a title; put client numbers in the notes field instead. Output ONLY valid JSON, no commentary, no code fences: {"tasks":[{"title":"...","space":"work|personal","due":"YYYY-MM-DD or omit","priority":"high|med|low","tag":"patients|press|marketing|admin|medical|family|friends|home","est":minutes,"notes":"who asked, what exactly, any deadline","steps":["only for tasks over ~30 min: 2-5 tiny steps, each startable in under 10 minutes"],"draft":"if this is a message needing a reply, draft it","context":""}],"events":[{"title":"...","date":"YYYY-MM-DD","time":"HH:MM or omit","space":"work|personal","category":"work|medical|social|family|other","location":"","notes":""}]}. Extract every distinct action and appointment. She has ADHD: big tasks MUST come pre-broken into small steps so she can start little by little. For every task created from a message/thread, fill the "context" field with 2-3 sentences of background: who the person is, what the thread history says, and what tone the reply needs. Drafts must follow this voice profile exactly:\n' + (DB.settings.style || DEFAULT_STYLE) + '\n\nHer people/tone notes:\n' + (DB.settings.people || PEOPLE_DEFAULT),
         messages: [{ role: 'user', content: ta.value.slice(0, 14000) }]
       })
     });
@@ -2424,6 +2434,18 @@ document.addEventListener('click', e => {
       else toast('Nothing ticked — nothing added');
       break;
     }
+    case 'undo-import': {
+      try {
+        const s = JSON.parse(localStorage.getItem('maudehq_undo') || '[]');
+        const last = s.pop();
+        if (!last) { toast('Nothing to undo'); break; }
+        localStorage.setItem('maudehq_undo', JSON.stringify(s));
+        DB.tasks = last.tasks; DB.events = last.events;
+        save(); render();
+        toast('↩ Undone — everything back to how it was at ' + new Date(last.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+      } catch (e) { toast('Undo failed — your backup file still has everything'); }
+      break;
+    }
     case 'dz-discard': window._dzPending = null; $('#dz-out').innerHTML = ''; $('#dz-out').style.display = 'none'; toast('Discarded — nothing was added'); break;
     case 'plan-seg': DB.settings.planSeg = v; save(); renderMain(); break;
     case 'dictate': toggleDictation(b.dataset.target, b); break;
@@ -2599,7 +2621,26 @@ if (DB.settings.lastUpdatePrompt !== todayStr()) {
 if (DB.settings.apiKey && (DB.settings.dpAutoDate !== todayStr() || !dayplanToday().blocks.some(b => b.type === 'task' && !b.done && !b.cancelled))) {
   if (DB.settings.dpAutoDate !== todayStr() || !dayplanToday().blocks.some(b => b.type === 'task' && !b.done && !b.cancelled)) { DB.settings.dpAutoDate = todayStr(); save(); setTimeout(() => buildDayPlan(), 2500); }
 }
-if (!DB.settings.people) { DB.settings.people = PEOPLE_DEFAULT; localStorage.setItem(LS_KEY, JSON.stringify(DB)); } /* people notes live in settings so they sync between devices */
+if (!DB.settings.people) { DB.settings.people = PEOPLE_DEFAULT; localStorage.setItem(LS_KEY, JSON.stringify(DB)); }
+if (!DB.settings.evclean1) { /* one-time: merge duplicate appointment slots, move client numbers out of titles */
+  const bySlot = {};
+  const cleaned = [];
+  const evs = DB.events.slice().sort((a, b) => a.title.length - b.title.length);
+  for (const e of evs) {
+    const num = String(e.title).match(/\d{3,}/);
+    const key = e.date + '|' + (e.time || '');
+    if (num) { const st = scrubEvTitle(e.title); if (st) e.title = st; if (!(e.notes || '').includes(num[0])) e.notes = ((e.notes ? e.notes + ' ' : '') + 'Client #' + num[0]).trim(); }
+    if (e.time && bySlot[key] && (e.category === 'patient' || bySlot[key].category === 'patient' || num)) {
+      const kpt = bySlot[key];
+      if (num && !(kpt.notes || '').includes(num[0])) kpt.notes = ((kpt.notes ? kpt.notes + ' ' : '') + 'Client #' + num[0]).trim();
+      continue; /* duplicate slot absorbed */
+    }
+    if (e.time) bySlot[key] = e;
+    cleaned.push(e);
+  }
+  DB.events = cleaned;
+  DB.settings.evclean1 = true; localStorage.setItem(LS_KEY, JSON.stringify(DB));
+} /* people notes live in settings so they sync between devices */
 /* captures arriving from the Send-to-Maude-HQ extension (hash or same-tab message) */
 function applyCapture(p) {
   if (!p || !p.text) return;
