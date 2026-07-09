@@ -819,7 +819,16 @@ function renderSidebar() {
       <button class="tiny-btn" title="Load an updates file or clipboard from Claude — rarely needed now that sweeps deliver themselves" data-act="import-drafts">⇪ Load updates</button>
       <button class="navbtn" title="Everything in one place: AI drafting in your voice, device sync, and backups" data-act="ai-settings"><span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span class="lbl">Settings</span></button>
       <div class="tiny-btn" style="cursor:default;text-align:center" title="${DB.settings.ghToken ? 'Changes sync automatically between your devices' : 'Data lives on this device only — turn on sync in Settings'}">${DB.settings.ghToken ? '● Sync on' : '○ This device only'}</div>
-      ${DB.settings.lastSweepAt ? `<div class="tiny-btn" style="cursor:default;text-align:center;opacity:.75" title="When the assistant last checked your inboxes and diary for you">✓ checked ${new Date(DB.settings.lastSweepAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>` : ''}
+      ${(() => {
+        const f = DB.settings.lastFullSweepAt, c = DB.settings.lastSweepAt;
+        const hm = ts => new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        const isToday = ts => ts && new Date(ts).toLocaleDateString('en-CA') === todayStr();
+        const bits = [];
+        if (isToday(f)) bits.push('✓ full sweep ' + hm(f));
+        else if (f) bits.push('full sweep: ' + new Date(f).toLocaleDateString('en-GB', { weekday: 'short' }) + ' ' + hm(f));
+        if (c && (!f || c > f)) bits.push('checked ' + hm(c));
+        return bits.length ? `<div class="tiny-btn" style="cursor:default;text-align:center;opacity:.75" title="Full sweep = Claude read your inboxes in depth and delivered tasks with drafts (weekdays 10:05 and 16:30). Checked = a lighter look for anything new.">${bits.join(' · ')}</div>` : '';
+      })()}
     </div>`;
 }
 
@@ -2668,7 +2677,7 @@ function applyCapture(p) {
     let raw = null;
     try { raw = decodeURIComponent(location.hash.slice(6)); } catch (e) {}
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
-    if (raw) { DB.settings.lastSweepAt = Date.now(); applyUpdatesText(raw); }
+    if (raw) { DB.settings.lastSweepAt = Date.now(); DB.settings.lastFullSweepAt = Date.now(); applyUpdatesText(raw); }
     return;
   }
   if (!location.hash.startsWith('#mhq=')) return;
