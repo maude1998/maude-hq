@@ -2240,6 +2240,7 @@ function openSettingsModal() {
           <label style="text-transform:none;color:var(--ink)"><input type="checkbox" id="fx-noteweb" ${DB.settings.noteWeb !== false ? 'checked' : ''} style="width:auto;margin-right:8px">🩺 Allow web checks in clinical notes (~4p per check)</label>
         </div>
       </div>
+      <div class="frow"><label>📅 Calendar feeds — no logins, ever (Apple Calendar → right-click your Cliniko calendar → Get Info → copy the Subscription URL; one per line)</label><textarea id="s-ics" rows="2" placeholder="webcal://… or https://…">${esc(DB.settings.icsFeeds || '')}</textarea></div>
       <div class="frow"><label>☁ Device sync code (GitHub token)</label><input type="text" id="s-gh" value="${esc(DB.settings.ghToken || '')}" placeholder="github_pat_… or ghp_…">
       <div class="qa-hint" style="padding:6px 2px 0">Paste the same code here and on your phone and they share one live copy (stored in a private Gist on your GitHub). Sync is ${DB.settings.ghToken ? 'ON ✓' : 'off'}.</div></div>
       <div class="modal-actions">
@@ -2315,7 +2316,7 @@ document.addEventListener('click', e => {
     case 'route': DB.settings.route = v; save(); render(); break;
     case 'export': exportData(); break;
     case 'import': window._importMode = 'backup'; $('#import-file').click(); break;
-    case 'ext-sweep': { toast('🧹 Sweeping your inboxes — 20-40 seconds…'); const eb = $('#ext-sweep-btn'); if (eb) eb.style.opacity = '.45'; window.postMessage({ mhqCmd: 'sweep' }, '*'); break; }
+    case 'ext-sweep': { toast('🧹 Sweeping your inboxes — 20-40 seconds…'); const eb = $('#ext-sweep-btn'); if (eb) eb.style.opacity = '.45'; window.postMessage({ mhqCmd: 'sweep', feeds: (DB.settings.icsFeeds || '').split('\n').map(x => x.trim()).filter(Boolean) }, '*'); break; }
     case 'import-drafts': pasteUpdates(); break;
     case 'import-drafts-file': window._importMode = 'drafts'; $('#import-file').click(); break;
     case 'paste-load': { const v = $('#paste-ta').value; closeModal(); if (v.trim()) applyUpdatesText(v); break; }
@@ -2335,7 +2336,7 @@ document.addEventListener('click', e => {
       }).catch(e => { b.textContent = '🔌 Test the connection'; toast(netErrMsg(e)); });
       break;
     }
-    case 'settings-save': { DB.settings.apiKey = $('#s-key').value.trim(); DB.settings.model = $('#s-model').value; DB.settings.style = $('#s-style').value; DB.settings.homeRoute = $('#s-home').value; DB.settings.people = $('#s-people').value; DB.settings.oaiKey = $('#s-oai').value.trim(); DB.settings.fxConfetti = $('#fx-confetti').checked; DB.settings.fxWheel = $('#fx-wheel').checked; DB.settings.fxSpark = $('#fx-spark').checked; DB.settings.fxGossip = $('#fx-gossip').checked; DB.settings.fxGame = $('#fx-game').checked; DB.settings.starGoal = parseInt($('#fx-goal').value) || 5; DB.settings.noteWeb = $('#fx-noteweb').checked;  const newTk = $('#s-gh').value.trim(); const tkChanged = newTk && newTk !== DB.settings.ghToken; DB.settings.ghToken = newTk; if (!newTk) DB.settings.gistId = ''; save(); closeModal(); render(); toast('Settings saved ✓'); if (tkChanged) { DB.settings.gistId = ''; ensureGist().then(syncPull).then(schedSync); } break; }
+    case 'settings-save': { DB.settings.apiKey = $('#s-key').value.trim(); DB.settings.model = $('#s-model').value; DB.settings.style = $('#s-style').value; DB.settings.homeRoute = $('#s-home').value; DB.settings.people = $('#s-people').value; DB.settings.oaiKey = $('#s-oai').value.trim(); DB.settings.fxConfetti = $('#fx-confetti').checked; DB.settings.fxWheel = $('#fx-wheel').checked; DB.settings.fxSpark = $('#fx-spark').checked; DB.settings.fxGossip = $('#fx-gossip').checked; DB.settings.fxGame = $('#fx-game').checked; DB.settings.starGoal = parseInt($('#fx-goal').value) || 5; DB.settings.noteWeb = $('#fx-noteweb').checked; const icsEl = $('#s-ics'); if (icsEl) DB.settings.icsFeeds = icsEl.value.trim(); const newTk = $('#s-gh').value.trim(); const tkChanged = newTk && newTk !== DB.settings.ghToken; DB.settings.ghToken = newTk; if (!newTk) DB.settings.gistId = ''; save(); closeModal(); render(); toast('Settings saved ✓'); if (tkChanged) { DB.settings.gistId = ''; ensureGist().then(syncPull).then(schedSync); } break; }
     case 'draft': openDraftModal(id); break;
     case 'draft-gen': {
       const t = getTask(id); t.context = $('#d-ctx').value.trim(); save();
@@ -2569,7 +2570,15 @@ function applyCapture(p) {
   }
 }
 (function () {
-  if (!location.hash || !location.hash.startsWith('#mhq=')) return;
+  if (!location.hash) return;
+  if (location.hash.startsWith('#mhqu=')) { /* structured updates from the scheduled sweeps: file straight in */
+    let raw = null;
+    try { raw = decodeURIComponent(location.hash.slice(6)); } catch (e) {}
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    if (raw) { applyUpdatesText(raw); }
+    return;
+  }
+  if (!location.hash.startsWith('#mhq=')) return;
   let p = null;
   try { p = JSON.parse(decodeURIComponent(location.hash.slice(5))); } catch (e) {}
   try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
