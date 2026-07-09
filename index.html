@@ -477,6 +477,13 @@ async function syncPull() {
     }
   } catch (e) {}
 }
+window.addEventListener('storage', e => {
+  if (e.key !== LS_KEY || !e.newValue) return;
+  try {
+    const incoming = JSON.parse(e.newValue);
+    if ((incoming.updatedAt || 0) > (DB.updatedAt || 0)) { DB = incoming; render(); toast('↻ Updated from another tab'); }
+  } catch (err) {}
+});
 let syncTimer = null, syncState = DB && DB.settings && DB.settings.ghToken ? 'on' : 'off';
 function schedSync() { if (!DB.settings.ghToken) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncPush, 1500); }
 async function syncPush() {
@@ -691,9 +698,15 @@ function applyUpdatesText(text) {
       const applyDraft = d => { const t = DB.tasks.find(x => x.status !== 'done' && x.title.toLowerCase().includes(String(d.match).toLowerCase())); if (t && d.text) { t.draft = d.text; drafts++; } };
       if (Array.isArray(j)) j.forEach(applyDraft);
       else {
+        const norm = s => String(s).toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
         (j.tasks || []).forEach(nt => {
           if (!nt.title) return;
-          const existing = DB.tasks.find(x => x.title.toLowerCase() === nt.title.toLowerCase());
+          const nn = norm(nt.title);
+          const existing = DB.tasks.find(x => {
+            if (x.status === 'done') return false;
+            const xn = norm(x.title);
+            return xn === nn || (nn.length > 15 && xn.length > 15 && (xn.includes(nn) || nn.includes(xn)));
+          });
           ['notes', 'draft', 'context'].forEach(k => { if (nt[k]) nt[k] = sanitizeAI(nt[k]); });
           const mkSteps = arr => (Array.isArray(arr) ? arr : []).map(s => ({ txt: sanitizeAI(s), done: false }));
           if (existing) { if (nt.notes && !existing.notes) { existing.notes = nt.notes; notes++; } if (nt.draft && !existing.draft) { existing.draft = nt.draft; drafts++; } if (nt.context && !existing.context) existing.context = nt.context; if (nt.steps && !(existing.steps || []).length) existing.steps = mkSteps(nt.steps); return; }
@@ -1757,7 +1770,7 @@ async function dropSort() {
       body: JSON.stringify({
         model: DB.settings.model || 'claude-sonnet-5', max_tokens: 4000,
         system: 'You convert pasted content into planner updates for Maude Calveley (aesthetics doctor, Ouronyx London). Today is ' + todayStr() + '. PATIENT CONFIDENTIALITY, non-negotiable: appointment/diary event titles carry the appointment TYPE only (e.g. Initial Consultation, Refinement, Balance Consultation, Clinic blocked time) - NEVER a patient name or client number in a title; put client numbers in the notes field instead. Output ONLY valid JSON, no commentary, no code fences: {"tasks":[{"title":"...","space":"work|personal","due":"YYYY-MM-DD or omit","priority":"high|med|low","tag":"patients|press|marketing|admin|medical|family|friends|home","est":minutes,"notes":"who asked, what exactly, any deadline","steps":["only for tasks over ~30 min: 2-5 tiny steps, each startable in under 10 minutes"],"draft":"if this is a message needing a reply, draft it","context":""}],"events":[{"title":"...","date":"YYYY-MM-DD","time":"HH:MM or omit","space":"work|personal","category":"work|medical|social|family|other","location":"","notes":""}]}. Extract every distinct action and appointment. She has ADHD: big tasks MUST come pre-broken into small steps so she can start little by little. For every task created from a message/thread, fill the "context" field with 2-3 sentences of background: who the person is, what the thread history says, and what tone the reply needs. Drafts must follow this voice profile exactly:\n' + (DB.settings.style || DEFAULT_STYLE) + '\n\nHer people/tone notes:\n' + (DB.settings.people || PEOPLE_DEFAULT),
-        messages: [{ role: 'user', content: ta.value.slice(0, 14000) }]
+        messages: [{ role: 'user', content: ta.value.slice(0, 26000) }]
       })
     });
     const j = await res.json();
@@ -1765,7 +1778,7 @@ async function dropSort() {
     let parsed;
     try { parsed = parseJSONLoose((j.content || []).map(c => c.text || '').join('')); }
     catch (e1) { /* one silent retry — long captures sometimes get cut off */
-      const res2 = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': DB.settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify({ model: FAST, max_tokens: 4000, system: 'Extract actions and appointments as compact JSON only: {"tasks":[{"title","space":"work|personal","due","priority","tag","est","notes"}],"events":[{"title","date","time","space","category"}]}. Be terse. No commentary.', messages: [{ role: 'user', content: ta.value.slice(0, 9000) }] }) });
+      const res2 = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': DB.settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify({ model: FAST, max_tokens: 4000, system: 'Extract actions and appointments as compact JSON only: {"tasks":[{"title","space":"work|personal","due","priority","tag","est","notes"}],"events":[{"title","date","time","space","category"}]}. Be terse. No commentary.', messages: [{ role: 'user', content: ta.value.slice(0, 14000) }] }) });
       const j2 = await res2.json();
       if (j2.error) throw new Error(j2.error.message || 'API error');
       parsed = parseJSONLoose((j2.content || []).map(c => c.text || '').join(''));
@@ -2702,6 +2715,8 @@ setTimeout(() => {
   if (DB.settings.autoSweep === false) return;
   if (!document.body.classList.contains('has-ext') || !DB.settings.apiKey) return;
   if (DB.settings.lastSweepAt && Date.now() - DB.settings.lastSweepAt < 3 * 3600e3) return;
+  const now = new Date(); const mins = now.getHours() * 60 + now.getMinutes(); const wd = now.getDay() >= 1 && now.getDay() <= 5;
+  if (wd && ((mins >= 590 && mins <= 620) || (mins >= 975 && mins <= 1005))) return; /* a full sweep lands soon - let it */
   toast('🧹 Quietly checking your inboxes and diary…');
   window.postMessage({ mhqCmd: 'sweep', feeds: (DB.settings.icsFeeds || '').split('\n').map(x => x.trim()).filter(Boolean) }, '*');
 }, 5000);
