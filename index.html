@@ -1735,14 +1735,21 @@ async function dropSort() {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': DB.settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
-        model: DB.settings.model || 'claude-sonnet-5', max_tokens: 2500,
+        model: DB.settings.model || 'claude-sonnet-5', max_tokens: 4000,
         system: 'You convert pasted content into planner updates for Maude Calveley (aesthetics doctor, Ouronyx London). Today is ' + todayStr() + '. Output ONLY valid JSON, no commentary, no code fences: {"tasks":[{"title":"...","space":"work|personal","due":"YYYY-MM-DD or omit","priority":"high|med|low","tag":"patients|press|marketing|admin|medical|family|friends|home","est":minutes,"notes":"who asked, what exactly, any deadline","steps":["only for tasks over ~30 min: 2-5 tiny steps, each startable in under 10 minutes"],"draft":"if this is a message needing a reply, draft it","context":""}],"events":[{"title":"...","date":"YYYY-MM-DD","time":"HH:MM or omit","space":"work|personal","category":"work|medical|social|family|other","location":"","notes":""}]}. Extract every distinct action and appointment. She has ADHD: big tasks MUST come pre-broken into small steps so she can start little by little. For every task created from a message/thread, fill the "context" field with 2-3 sentences of background: who the person is, what the thread history says, and what tone the reply needs. Drafts must follow this voice profile exactly:\n' + (DB.settings.style || DEFAULT_STYLE) + '\n\nHer people/tone notes:\n' + (DB.settings.people || PEOPLE_DEFAULT),
-        messages: [{ role: 'user', content: ta.value }]
+        messages: [{ role: 'user', content: ta.value.slice(0, 14000) }]
       })
     });
     const j = await res.json();
     if (j.error) throw new Error(j.error.message || 'API error');
-    const parsed = parseJSONLoose((j.content || []).map(c => c.text || '').join(''));
+    let parsed;
+    try { parsed = parseJSONLoose((j.content || []).map(c => c.text || '').join('')); }
+    catch (e1) { /* one silent retry — long captures sometimes get cut off */
+      const res2 = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': DB.settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify({ model: FAST, max_tokens: 4000, system: 'Extract actions and appointments as compact JSON only: {"tasks":[{"title","space":"work|personal","due","priority","tag","est","notes"}],"events":[{"title","date","time","space","category"}]}. Be terse. No commentary.', messages: [{ role: 'user', content: ta.value.slice(0, 9000) }] }) });
+      const j2 = await res2.json();
+      if (j2.error) throw new Error(j2.error.message || 'API error');
+      parsed = parseJSONLoose((j2.content || []).map(c => c.text || '').join(''));
+    }
     window._dzPending = parsed;
     const tk = parsed.tasks || [], ev = parsed.events || [];
     $('#dz-out').innerHTML = `
@@ -2594,6 +2601,7 @@ if (!DB.settings.people) { DB.settings.people = PEOPLE_DEFAULT; localStorage.set
 /* captures arriving from the Send-to-Maude-HQ extension (hash or same-tab message) */
 function applyCapture(p) {
   if (!p || !p.text) return;
+  if (/Maude HQ/i.test(p.source || '') || /^\s*Maude HQ\s*\n\s*All\s*\n\s*Work/.test(p.text)) { toast('That was the app capturing itself — ignored. Use 🧹 Sweep now instead.'); return; }
   DB.settings.route = 'drop'; save(); render();
   const ta = $('#dz-ta');
   if (ta) {
