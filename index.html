@@ -2553,6 +2553,21 @@ if (DB.settings.apiKey && (DB.settings.dpAutoDate !== todayStr() || !dayplanToda
   if (DB.settings.dpAutoDate !== todayStr() || !dayplanToday().blocks.some(b => b.type === 'task' && !b.done && !b.cancelled)) { DB.settings.dpAutoDate = todayStr(); save(); setTimeout(() => buildDayPlan(), 2500); }
 }
 if (!DB.settings.people) { DB.settings.people = PEOPLE_DEFAULT; localStorage.setItem(LS_KEY, JSON.stringify(DB)); } /* people notes live in settings so they sync between devices */
+/* handoff from the Send-to-Maude-HQ Chrome button: #mhq=<payload> */
+(function () {
+  if (!location.hash || !location.hash.startsWith('#mhq=')) return;
+  let p = null;
+  try { p = JSON.parse(decodeURIComponent(location.hash.slice(5))); } catch (e) {}
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  if (!p || !p.text) return;
+  DB.settings.route = 'drop'; save(); render();
+  const ta = $('#dz-ta');
+  if (ta) {
+    ta.value = 'Captured from ' + (p.source || 'a page') + ' at ' + new Date(p.at || Date.now()).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ':\n\n' + p.text;
+    toast('📥 Captured — sorting it out…');
+    if (DB.settings.apiKey) setTimeout(() => dropSort(), 400);
+  }
+})();
 if (DB.settings.ghToken) { syncPull(); setInterval(syncPull, 120000); }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && DB.settings.ghToken) syncPull(); });
 
