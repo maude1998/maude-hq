@@ -2602,12 +2602,21 @@ if (!DB.settings.people) { DB.settings.people = PEOPLE_DEFAULT; localStorage.set
 function applyCapture(p) {
   if (!p || !p.text) return;
   if (/Maude HQ/i.test(p.source || '') || /^\s*Maude HQ\s*\n\s*All\s*\n\s*Work/.test(p.text)) { toast('That was the app capturing itself — ignored. Use 🧹 Sweep now instead.'); return; }
+  const prevTa = $('#dz-ta'); const prev = prevTa ? prevTa.value : ''; /* read BEFORE render wipes the box */
   DB.settings.route = 'drop'; save(); render();
   const ta = $('#dz-ta');
-  if (ta) {
-    ta.value = 'Captured from ' + (p.source || 'a page') + ' at ' + new Date(p.at || Date.now()).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ':\n\n' + p.text;
+  if (!ta) return;
+  const stamp = 'Captured from ' + (p.source || 'a page') + ' at ' + new Date(p.at || Date.now()).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ':\n\n' + p.text;
+  ta.value = prev.trim() ? prev.trimEnd() + '\n\n════════════\n\n' + stamp : stamp; /* captures pile up, one approval for the lot */
+  const schedSort = ms => { clearTimeout(window._capT); if (DB.settings.apiKey) window._capT = setTimeout(() => dropSort(), ms); };
+  /* Mac Mail arrived and the sweep engine is connected: grab the web sources too, then sort everything together */
+  if (/Mac Mail/i.test(p.source || '') && document.body.classList.contains('has-ext')) {
+    toast('📥 Mail + Calendar in — also sweeping work email, WhatsApp and diary…');
+    window.postMessage({ mhqCmd: 'sweep', feeds: (DB.settings.icsFeeds || '').split('\n').map(x => x.trim()).filter(Boolean) }, '*');
+    schedSort(60000); /* fallback: sort what we have if the sweep never comes back */
+  } else {
     toast('📥 Captured — sorting it out…');
-    if (DB.settings.apiKey) setTimeout(() => dropSort(), 400);
+    schedSort(2500);
   }
 }
 (function () {
