@@ -114,6 +114,8 @@
   .pill.p-pile0{background:#fdecec;color:#c2452d;font-weight:800}
   .pill.p-pile1{background:#fdf3dd;color:#c98f1b;font-weight:800}
   .pill.p-pile2{background:#e5f4f1;color:#2f9e8f;font-weight:800}
+  #ext-sweep-btn{display:none}
+  body.has-ext #ext-sweep-btn{display:flex}
   .confetti{position:fixed;z-index:120;width:7px;height:7px;border-radius:2px;pointer-events:none;animation:confl .85s ease-out forwards}
   @keyframes confl{0%{transform:translate(0,0) rotate(0);opacity:1}100%{transform:translate(var(--dx),var(--dy)) rotate(240deg);opacity:0}}
   .bk-ghost{position:fixed;z-index:99;pointer-events:none;box-shadow:var(--shadow-lg);transform:rotate(2deg) scale(1.03);opacity:.95}
@@ -806,6 +808,7 @@ function renderSidebar() {
       </button>`).join('')}
     <div class="side-foot">
       <div class="side-sep"></div>
+      <button class="navbtn" id="ext-sweep-btn" title="Pulls work email, Hotmail, WhatsApp Web and the Cliniko diary all at once (20-40s), then sorts it here for your sign-off" data-act="ext-sweep"><span class="ico">🧹</span><span class="lbl">Sweep now</span></button>
       <button class="navbtn" title="Copied updates from Claude? One click loads them straight from your clipboard — or drag the file anywhere onto the app" data-act="import-drafts"><span class="ico">⇪</span><span class="lbl">Load updates</span></button>
       <button class="navbtn" title="Everything in one place: AI drafting in your voice, device sync, and backups" data-act="ai-settings"><span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span class="lbl">Settings</span></button>
       <div class="tiny-btn" style="cursor:default;text-align:center" title="${DB.settings.ghToken ? 'Changes sync automatically between your devices' : 'Data lives on this device only — turn on sync in Settings'}">${DB.settings.ghToken ? '● Sync on' : '○ This device only'}</div>
@@ -2312,6 +2315,7 @@ document.addEventListener('click', e => {
     case 'route': DB.settings.route = v; save(); render(); break;
     case 'export': exportData(); break;
     case 'import': window._importMode = 'backup'; $('#import-file').click(); break;
+    case 'ext-sweep': { toast('🧹 Sweeping your inboxes — 20-40 seconds…'); const eb = $('#ext-sweep-btn'); if (eb) eb.style.opacity = '.45'; window.postMessage({ mhqCmd: 'sweep' }, '*'); break; }
     case 'import-drafts': pasteUpdates(); break;
     case 'import-drafts-file': window._importMode = 'drafts'; $('#import-file').click(); break;
     case 'paste-load': { const v = $('#paste-ta').value; closeModal(); if (v.trim()) applyUpdatesText(v); break; }
@@ -2553,12 +2557,8 @@ if (DB.settings.apiKey && (DB.settings.dpAutoDate !== todayStr() || !dayplanToda
   if (DB.settings.dpAutoDate !== todayStr() || !dayplanToday().blocks.some(b => b.type === 'task' && !b.done && !b.cancelled)) { DB.settings.dpAutoDate = todayStr(); save(); setTimeout(() => buildDayPlan(), 2500); }
 }
 if (!DB.settings.people) { DB.settings.people = PEOPLE_DEFAULT; localStorage.setItem(LS_KEY, JSON.stringify(DB)); } /* people notes live in settings so they sync between devices */
-/* handoff from the Send-to-Maude-HQ Chrome button: #mhq=<payload> */
-(function () {
-  if (!location.hash || !location.hash.startsWith('#mhq=')) return;
-  let p = null;
-  try { p = JSON.parse(decodeURIComponent(location.hash.slice(5))); } catch (e) {}
-  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+/* captures arriving from the Send-to-Maude-HQ extension (hash or same-tab message) */
+function applyCapture(p) {
   if (!p || !p.text) return;
   DB.settings.route = 'drop'; save(); render();
   const ta = $('#dz-ta');
@@ -2567,7 +2567,24 @@ if (!DB.settings.people) { DB.settings.people = PEOPLE_DEFAULT; localStorage.set
     toast('📥 Captured — sorting it out…');
     if (DB.settings.apiKey) setTimeout(() => dropSort(), 400);
   }
+}
+(function () {
+  if (!location.hash || !location.hash.startsWith('#mhq=')) return;
+  let p = null;
+  try { p = JSON.parse(decodeURIComponent(location.hash.slice(5))); } catch (e) {}
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  applyCapture(p);
 })();
+window.addEventListener('message', e => {
+  if (e.source !== window || !e.data) return;
+  if (e.data.mhqExtensionReady) document.body.classList.add('has-ext');
+  if (e.data.mhqResult) {
+    const b = $('#ext-sweep-btn'); if (b) { b.style.opacity = ''; }
+    applyCapture(e.data.mhqResult);
+  }
+});
+setTimeout(() => window.postMessage({ mhqCmd: 'ping' }, '*'), 1200);
+setTimeout(() => window.postMessage({ mhqCmd: 'ping' }, '*'), 4000);
 if (DB.settings.ghToken) { syncPull(); setInterval(syncPull, 120000); }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && DB.settings.ghToken) syncPull(); });
 
