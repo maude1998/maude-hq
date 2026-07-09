@@ -72,7 +72,8 @@
   /* ---------- Main ---------- */
   #main{flex:1;overflow-y:auto;padding:34px 44px 90px}
   .view{max-width:760px;margin:0 auto}
-  .view-head{margin-bottom:20px}
+  .view-head{margin-bottom:20px;padding-right:185px}
+  @media(max-width:700px){.view-head{padding-right:0;padding-top:56px}}
   .view-head h1{font-size:1.7rem;letter-spacing:-.03em;font-weight:750}
   .view-head .sub{color:var(--ink-soft);font-size:.95rem;margin-top:4px}
 
@@ -220,6 +221,8 @@
   .task.done .c-star{transform:scale(1)}
   @keyframes starpop{0%{transform:scale(1)}35%{transform:scale(1.7) rotate(-15deg)}65%{transform:scale(.9) rotate(6deg)}100%{transform:scale(1)}}
   .tickbox.pop .c-star{animation:starpop .55s ease}
+  .game-pill{pointer-events:auto;cursor:pointer;margin-top:6px;padding:4px 12px;border-radius:999px;font-size:.74rem;font-weight:800;color:#5c430a;background:linear-gradient(140deg,#fce491,#eebb35);box-shadow:0 1px 4px rgba(201,143,27,.4);animation:pillpulse 2.6s ease infinite}
+  @keyframes pillpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
   #clock .c-s{margin-top:4px;font-size:.82rem;font-weight:800;background:linear-gradient(140deg,#eebb35,#c98f1b);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 1px 1px rgba(201,143,27,.3))}
   .t-body{flex:1;min-width:0}
   .t-title{font-size:.98rem;font-weight:550;line-height:1.35;word-wrap:break-word}
@@ -979,8 +982,15 @@ function briefHTML() {
 }
 async function makeSpark() {
   try {
-    const txt = await askAPI('Produce ONE delightful nugget: either a genuinely surprising fun fact (science, medicine, nature, history, language) OR an uncommon English word with its definition and one playful example sentence. Maximum 2 sentences. No preamble, no emoji, no em dashes. Vary wildly between calls.', 'Spark #' + Math.floor(Math.random() * 1e6) + ' at ' + new Date().getHours() + 'h', 160, null, FAST);
-    if (txt.trim()) { DB.settings.sparkText = sanitizeAI(txt); DB.settings.sparkAt = Date.now(); save(); }
+    const topics = ['deep sea', 'ancient Rome', 'the human body', 'linguistics and etymology', 'space and astronomy', 'food history', 'animal behaviour', 'mathematics', 'Victorian London', 'the microbiome', 'colour and perception', 'music and the brain', 'geology', 'insects', 'the history of medicine', 'weather and climate oddities', 'famous mistakes and accidents', 'sleep and dreams', 'plants and fungi', 'old English words'];
+    const pick = topics[Math.floor(Math.random() * topics.length)];
+    const hist = DB.settings.sparkHist || [];
+    const txt = await askAPI('Produce ONE delightful nugget: either a genuinely surprising fun fact about ' + pick + ' OR an uncommon English word with its definition and one playful example sentence. Maximum 2 sentences. No preamble, no emoji, no em dashes. STRICTLY FORBIDDEN: anything about, or similar to, these previously used sparks: ' + (hist.join(' | ') || 'none yet') + '. Also forbidden: the mantis shrimp, octopus intelligence, honey never spoiling, and any other over-used trivia staple.', 'Spark #' + Math.floor(Math.random() * 1e6), 160, null, FAST);
+    if (txt.trim()) {
+      DB.settings.sparkText = sanitizeAI(txt); DB.settings.sparkAt = Date.now();
+      DB.settings.sparkHist = [...hist, txt.slice(0, 60)].slice(-12);
+      save();
+    }
   } catch (e) {}
   window._sparkBusy = false;
   if (DB.settings.route === 'today') renderMain();
@@ -2624,7 +2634,7 @@ load(); render();
     const starsToday = DB.tasks.filter(x => x.status === 'done' && x.doneAt && new Date(x.doneAt).toLocaleDateString('en-CA') === td).length;
     let streak = 0, cursor = doneDays[td] ? td : addDaysStr(td, -1);
     while (doneDays[cursor]) { streak++; cursor = addDaysStr(cursor, -1); }
-    c.innerHTML = '<div class="c-t">' + String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0') + '</div><div class="c-d">' + n.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + '</div><div class="c-s" title="Stars earned today' + (streak >= 2 ? ' · your streak: days in a row with at least one star — don’t break the chain' : '') + '">★ ' + starsToday + ' today' + (streak >= 2 ? ' · 🔥 ' + streak + '-day streak' : '') + (DB.settings.fxGame !== false && starsToday >= (DB.settings.starGoal || 5) ? ' <button data-act="game-open" style="pointer-events:auto;cursor:pointer;font-size:1rem" title="Star goal hit — your daily game is unlocked">🎁</button>' : '') + '</div>';
+    c.innerHTML = '<div class="c-t">' + String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0') + '</div><div class="c-d">' + n.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + '</div><div class="c-s" title="Stars earned today' + (streak >= 2 ? ' · your streak: days in a row with at least one star — don’t break the chain' : '') + '">★ ' + starsToday + ' today' + (streak >= 2 ? ' · 🔥 ' + streak + '-day streak' : '') + '</div>' + (DB.settings.fxGame !== false && starsToday >= (DB.settings.starGoal || 5) ? '<button data-act="game-open" class="game-pill" title="Star goal hit — your daily mini-game is unlocked">🕹️ Play your game</button>' : '');
   };
   window._ctick = tick; tick(); setInterval(tick, 15000);
 })();
