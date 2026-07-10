@@ -1611,6 +1611,7 @@ function openSeenModal(label) {
     <div class="frow"><label style="text-transform:none;font-size:.9rem;color:var(--ink)"><input type="checkbox" id="sn-t2" checked style="width:auto;margin-right:8px">Cliniko note</label></div>
     <div class="frow"><label style="text-transform:none;font-size:.9rem;color:var(--ink)"><input type="checkbox" id="sn-t3" style="width:auto;margin-right:8px">Forms to complete</label></div>
     <div class="frow"><label style="text-transform:none;font-size:.9rem;color:var(--ink)"><input type="checkbox" id="sn-t4" style="width:auto;margin-right:8px">Prescription needed</label></div>
+    <div class="frow"><label style="text-transform:none;font-size:.9rem;color:var(--ink)"><input type="checkbox" id="sn-t5" style="width:auto;margin-right:8px">Recall to set in Cliniko</label></div>
     <div class="modal-actions">
       <button class="btn-primary" data-act="seen-save">Add to my day</button>
       <button class="btn-ghost" data-act="modal-close">Cancel</button>
@@ -1627,6 +1628,7 @@ function seenSave() {
   if ($('#sn-t2').checked) { mk('Cliniko note — ' + init, 10); n++; }
   if ($('#sn-t3').checked) { mk('Complete forms — ' + init, 10); n++; }
   if ($('#sn-t4').checked) { mk('Prescription — ' + init, 5); n++; }
+  if ($('#sn-t5') && $('#sn-t5').checked) { mk('Set recall in Cliniko — ' + init, 5); n++; }
   save(); closeModal(); render();
   toast(n + ' task' + (n === 1 ? '' : 's') + ' added for ' + init + ' — Replan slots them into your gaps');
 }
@@ -2450,10 +2452,6 @@ document.addEventListener('click', e => {
       toast('🧹 Sweeping your inboxes — 20-40 seconds…');
       const eb = $('#ext-sweep-btn'); if (eb) eb.style.opacity = '.45';
       window.postMessage({ mhqCmd: 'sweep', feeds: (DB.settings.icsFeeds || '').split('\n').map(x => x.trim()).filter(Boolean) }, '*');
-      try { /* also wake the Mac collector (Mail + Calendar + Notes) if it's installed — silently does nothing otherwise */
-        const ifr = document.createElement('iframe'); ifr.style.display = 'none'; ifr.src = 'maudehq-sweep://go';
-        document.body.appendChild(ifr); setTimeout(() => ifr.remove(), 3000);
-      } catch (e) {}
       break;
     }
     case 'sweep-test': {
