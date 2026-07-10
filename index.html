@@ -481,9 +481,10 @@ async function syncPull() {
     const f = j.files && j.files['maudehq.json']; if (!f) return;
     const remote = JSON.parse(f.truncated ? await (await fetch(f.raw_url)).text() : f.content);
     const newer = (remote.updatedAt || 0) > (DB.updatedAt || 0);
-    const remoteHasData = dataWeight(remote) > 0, iAmEmpty = dataWeight(DB) === 0;
-    /* an empty device never outranks real data, whatever the clocks say */
-    if ((newer && !(dataWeight(remote) === 0 && !iAmEmpty)) || (iAmEmpty && remoteHasData)) {
+    const rw = dataWeight(remote), lw = dataWeight(DB);
+    const remoteHasData = rw > 0, iAmEmpty = lw === 0;
+    const massiveShrink = lw >= 10 && rw < lw * 0.3; /* the cloud suddenly holds a fraction of what I hold: junk copy shouting - refuse */
+    if ((newer && !massiveShrink && !(rw === 0 && !iAmEmpty)) || (iAmEmpty && remoteHasData)) {
       const keep = { ghToken: DB.settings.ghToken, gistId: DB.settings.gistId, apiKey: DB.settings.apiKey };
       DB = remote; DB.settings = Object.assign(DB.settings || {}, keep);
       localStorage.setItem(LS_KEY, JSON.stringify(DB)); render();
@@ -514,6 +515,23 @@ async function syncPush() {
       }
     }
     if (dataWeight(DB) === 0) { await syncPull(); if (dataWeight(DB) > 0) return; } /* empty device: take the cloud copy, never erase it */
+    if (dataWeight(DB) < 10) { /* suspiciously light device: check the cloud before daring to overwrite it */
+      try {
+        const r0 = await fetch('https://api.github.com/gists/' + DB.settings.gistId, { headers: ghHdr(tk) });
+        const j0 = await r0.json();
+        const f0 = j0.files && j0.files['maudehq.json'];
+        if (f0) {
+          const remote0 = JSON.parse(f0.truncated ? await (await fetch(f0.raw_url)).text() : f0.content);
+          if (dataWeight(remote0) > dataWeight(DB) * 3) {
+            const keep0 = { ghToken: DB.settings.ghToken, gistId: DB.settings.gistId, apiKey: DB.settings.apiKey, oaiKey: DB.settings.oaiKey };
+            DB = remote0; DB.settings = Object.assign(DB.settings || {}, keep0);
+            localStorage.setItem(LS_KEY, JSON.stringify(DB)); render();
+            toast('☁ This device had almost nothing - adopted the fuller cloud copy instead of overwriting it');
+            return;
+          }
+        }
+      } catch (e0) {}
+    }
     await fetch('https://api.github.com/gists/' + DB.settings.gistId, { method: 'PATCH', headers: ghHdr(tk), body: JSON.stringify(body) });
   } catch (e) {}
 }
