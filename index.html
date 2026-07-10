@@ -225,7 +225,7 @@
   .task.done .c-star{transform:scale(1)}
   @keyframes starpop{0%{transform:scale(1)}35%{transform:scale(1.7) rotate(-15deg)}65%{transform:scale(.9) rotate(6deg)}100%{transform:scale(1)}}
   .tickbox.pop .c-star{animation:starpop .55s ease}
-  .game-pill{pointer-events:auto;cursor:pointer;margin-top:0;padding:3px 10px;border-radius:999px;font-size:.74rem;font-weight:800;color:#5c430a;background:linear-gradient(140deg,#fce491,#eebb35);box-shadow:0 1px 4px rgba(201,143,27,.4);animation:pillpulse 2.6s ease infinite}
+  .game-pill{pointer-events:auto;cursor:pointer;margin-top:0;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-size:.95rem;background:linear-gradient(140deg,#fce491,#eebb35);box-shadow:0 1px 4px rgba(201,143,27,.4);animation:pillpulse 2.6s ease infinite}
   @keyframes pillpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
   #clock .c-s{margin-top:0;font-size:.78rem;white-space:nowrap;font-weight:800;background:linear-gradient(140deg,#eebb35,#c98f1b);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 1px 1px rgba(201,143,27,.3))}
   .t-body{flex:1;min-width:0}
@@ -2432,6 +2432,10 @@ document.addEventListener('click', e => {
       toast('🧹 Sweeping your inboxes — 20-40 seconds…');
       const eb = $('#ext-sweep-btn'); if (eb) eb.style.opacity = '.45';
       window.postMessage({ mhqCmd: 'sweep', feeds: (DB.settings.icsFeeds || '').split('\n').map(x => x.trim()).filter(Boolean) }, '*');
+      try { /* also wake the Mac collector (Mail + Calendar + Notes) if it's installed — silently does nothing otherwise */
+        const ifr = document.createElement('iframe'); ifr.style.display = 'none'; ifr.src = 'maudehq-sweep://go';
+        document.body.appendChild(ifr); setTimeout(() => ifr.remove(), 3000);
+      } catch (e) {}
       break;
     }
     case 'sweep-test': {
@@ -2670,7 +2674,7 @@ load(); render();
     const starsToday = DB.tasks.filter(x => x.status === 'done' && x.doneAt && new Date(x.doneAt).toLocaleDateString('en-CA') === td).length;
     let streak = 0, cursor = doneDays[td] ? td : addDaysStr(td, -1);
     while (doneDays[cursor]) { streak++; cursor = addDaysStr(cursor, -1); }
-    c.innerHTML = '<div class="c-t">' + String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0') + '</div><div class="c-d">' + n.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + '</div><div class="c-s" title="Stars earned today' + (streak >= 2 ? ' · your streak: days in a row with at least one star — don’t break the chain' : '') + '">★ ' + starsToday + ' today' + (streak >= 2 ? ' · 🔥 ' + streak + '-day streak' : '') + '</div>' + (DB.settings.fxGame !== false && starsToday >= (DB.settings.starGoal || 5) ? '<button data-act="game-open" class="game-pill" title="Star goal hit — your daily mini-game is unlocked">🕹️ Play your game</button>' : '');
+    c.innerHTML = '<div class="c-t">' + String(n.getHours()).padStart(2, '0') + ':' + String(n.getMinutes()).padStart(2, '0') + '</div><div class="c-d">' + n.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + '</div><div class="c-s" title="Stars earned today' + (streak >= 2 ? ' · your streak: days in a row with at least one star — don’t break the chain' : '') + '">★ ' + starsToday + ' today' + (streak >= 2 ? ' · 🔥 ' + streak + '-day streak' : '') + '</div>' + (DB.settings.fxGame !== false && starsToday >= (DB.settings.starGoal || 5) ? '<button data-act="game-open" class="game-pill" title="Star goal hit — your daily mini-game is unlocked. Tap to play">🕹️</button>' : '');
   };
   window._ctick = tick; tick(); setInterval(tick, 15000);
 })();
