@@ -1083,7 +1083,9 @@ async function buildDayPlan() {
     const isBizPersonal = ti => /\b(call|ring|phone|book|bank|gp|surgery|school|council|office|clinic|dentist|insurance|hmrc)\b/i.test(ti);
     const items = clean.filter(b => !/lunch/i.test(b.title)).map(b => {
       const mt = meta(b.title);
-      const dur = Math.max((b.end && b.start) ? hm2min(b.end) - hm2min(b.start) : 0, Math.min(Math.max(mt.est || 20, 10), 120));
+      const aiLen = (b.end && b.start) ? hm2min(b.end) - hm2min(b.start) : 0;
+      /* her estimate is the boss; the AI's window only fills in when there is no estimate */
+      const dur = mt.est ? Math.min(Math.max(mt.est, 10), 120) : Math.min(Math.max(aiLen || 25, 15), 120);
       return { title: b.title, dur, m: mt };
     });
     if (rank) { const ri = ti => { const st = String(ti).toLowerCase(); const i = rank.findIndex(r => { const rl = r.toLowerCase(); return rl === st || rl.includes(st) || st.includes(rl); }); return i < 0 ? 99 : i; }; items.sort((a, b2) => ri(a.title) - ri(b2.title)); } /* her triage decides placement order — Musts take the best gaps, code-enforced */
