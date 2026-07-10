@@ -1246,9 +1246,12 @@ function openBlockActions(id) {
 function rankCands() {
   const prioSort2 = { high: 0, med: 1, low: 2 };
   const held = (dayplanToday().blocks || []).filter(b => b.userFixed && b.type === 'task' && !b.cancelled).map(b => b.title.toLowerCase());
-  return openTasks().filter(x => x.status === 'open' && !held.includes(x.title.toLowerCase()))
-    .sort((a, b2) => ((a.due || '9999') < (b2.due || '9999') ? -1 : (a.due || '9999') > (b2.due || '9999') ? 1 : prioSort2[a.priority] - prioSort2[b2.priority]))
-    .slice(0, 12);
+  const t2 = todayStr();
+  const all = openTasks().filter(x => x.status === 'open' && !held.includes(x.title.toLowerCase()))
+    .sort((a, b2) => ((a.due || '9999') < (b2.due || '9999') ? -1 : (a.due || '9999') > (b2.due || '9999') ? 1 : prioSort2[a.priority] - prioSort2[b2.priority]));
+  const nowish = all.filter(x => x.due && x.due <= t2).slice(0, 12);
+  const upcoming = all.filter(x => !x.due || x.due > t2).slice(0, 6); /* Up-next gets its own seats in the tray */
+  return [...nowish, ...upcoming];
 }
 function renderRankBody() {
   const t = todayStr();
@@ -1280,7 +1283,7 @@ function openRankModal() {
   $('#modal-root').innerHTML = `
   <div class="modal-bg" data-act="modal-bg"><div class="modal bk-modal">
     <h3>🎯 Triage today</h3>
-    <p style="color:var(--ink-soft);font-size:.88rem;margin-bottom:14px">Drag each task from the tray into a pile. Musts get the best diary slots first; anything left in the tray just follows deadline order.</p>
+    <p style="color:var(--ink-soft);font-size:.88rem;margin-bottom:14px">Drag each task from the tray into a pile. Musts get the best diary slots first; anything left in the tray follows deadline order. Up-next items are in the tray too — drop one in 🔥 Must or ⚡ Should and it joins today.</p>
     <div id="bk-wrap">${renderRankBody()}</div>
     <div class="modal-actions">
       <button class="btn-primary" data-act="rk-apply" title="Rebuilds the diary: Musts first, Shoulds next, Can-waits and unsorted after">Slot into my day</button>
@@ -1708,8 +1711,10 @@ function viewToday() {
   const pinned = sortTasks(open.filter(x => !x.focus && (x.pinned || startCond(x))));
   const over = sortTasks(open.filter(x => !skip(x) && x.due && x.due < t));
   const today = sortTasks(open.filter(x => !skip(x) && x.due === t));
+  const pileMap = (DB.dayRankBk && DB.dayRankBk.date === t) ? DB.dayRankBk.map : {};
+  const promoted = sortTasks(open.filter(x => !skip(x) && (!x.due || x.due > t) && pileMap[x.title] !== undefined && pileMap[x.title] <= 1)); /* she ranked it Must/Should: today it is */
   const draftFirst = arr => [...arr.filter(x => x.draft), ...arr.filter(x => !x.draft)];
-  let todayList = [...draftFirst(over), ...draftFirst(today)];
+  let todayList = [...draftFirst(over), ...draftFirst(today), ...promoted];
   const rk = (DB.dayRank && DB.dayRank.date === t) ? DB.dayRank.titles : null;
   if (rk) { const ri = x => { const i = rk.indexOf(x.title); return i < 0 ? 99 : i; }; todayList = todayList.map((x, i) => [x, i]).sort((a, b2) => (ri(a[0]) - ri(b2[0])) || (a[1] - b2[1])).map(pr => pr[0]); }
   const draftsN = open.filter(x => x.draft).length;
@@ -1749,8 +1754,9 @@ function viewToday() {
       <div class="cardlist" style="margin-top:10px">${doneToday.slice().sort((a, b2) => (b2.doneAt || 0) - (a.doneAt || 0)).map(x => taskCard(x)).join('')}</div>
     </details>` : ''}
     ${(() => {
-      const later = sortTasks(open.filter(x => !skip(x) && x.due && x.due > t)).slice(0, 12);
-      const nodate = sortTasks(open.filter(x => !skip(x) && !x.due));
+      const isPromoted = x => pileMap[x.title] !== undefined && pileMap[x.title] <= 1;
+      const later = sortTasks(open.filter(x => !skip(x) && !isPromoted(x) && x.due && x.due > t)).slice(0, 12);
+      const nodate = sortTasks(open.filter(x => !skip(x) && !isPromoted(x) && !x.due));
       if (!later.length && !nodate.length) return '';
       return `<details class="later-box">
         <summary title="Everything coming up, sorted by date — pin (📌) anything important and it moves to the top of Today instead">⏭ Up next <span class="n">(${later.length + nodate.length})</span></summary>
