@@ -766,8 +766,10 @@ function applyUpdatesText(text) {
           DB.tasks.push({ id: uid(), title: nt.title, notes: nt.notes || '', space: nt.space || 'work', tag: nt.tag || '', priority: nt.priority || 'med', due: nt.due || '', startBy: nt.startBy || '', est: nt.est || 0, status: 'open', focus: false, repeat: nt.repeat || '', steps: mkSteps(nt.steps), draft: nt.draft || '', context: nt.context || '', createdAt: Date.now(), doneAt: null });
           tasks++;
         });
+        const PATIENT_TYPES = /after-?care|consultation|refinement|balance (plan|baseline)? ?review|foc treatment|resurfacing|hair (restoration|loss)|signature facial|beauty enhancement|restoration of youthfulness|liquid lift|treatment review/i;
         (j.events || []).forEach(ne => {
           if (!ne.title || !ne.date) return;
+          if (PATIENT_TYPES.test(ne.title)) ne.category = 'patient'; /* every appointment type gets the Seen popup */
           /* confidentiality: client numbers live in notes, never in titles */
           const num = String(ne.title).match(/\d{3,}/);
           if (num) { ne.title = scrubEvTitle(ne.title) || ne.title; if (!(ne.notes || '').includes(num[0])) ne.notes = ((ne.notes ? ne.notes + ' ' : '') + 'Client #' + num[0]).trim(); }
@@ -2720,6 +2722,12 @@ if (!DB.settings.people) { DB.settings.people = PEOPLE_DEFAULT; localStorage.set
 if (!DB.settings.shrimp1) {
   if (/mantis shrimp/i.test(DB.settings.sparkText || '')) { DB.settings.sparkText = ''; DB.settings.sparkAt = 0; }
   DB.settings.shrimp1 = true; localStorage.setItem(LS_KEY, JSON.stringify(DB));
+}
+if (!DB.settings.evpat1) {
+  const PT = /after-?care|consultation|refinement|balance (plan|baseline)? ?review|foc treatment|resurfacing|hair (restoration|loss)|signature facial|beauty enhancement|restoration of youthfulness|liquid lift|treatment review/i;
+  DB.events.forEach(e => { if (PT.test(e.title || '') && e.category !== 'patient') e.category = 'patient'; });
+  (DB.dayplan && DB.dayplan.blocks || []).forEach(b => { if (String(b.id).startsWith('ev-') && PT.test(b.title || '')) b.patient = true; });
+  DB.settings.evpat1 = true; localStorage.setItem(LS_KEY, JSON.stringify(DB));
 }
 if (!DB.settings.evclean1) { /* one-time: merge duplicate appointment slots, move client numbers out of titles */
   const bySlot = {};
