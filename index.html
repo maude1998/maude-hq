@@ -770,6 +770,8 @@ function applyUpdatesText(text) {
         (j.events || []).forEach(ne => {
           if (!ne.title || !ne.date) return;
           if (PATIENT_TYPES.test(ne.title)) ne.category = 'patient'; /* every appointment type gets the Seen popup */
+          const tr = String(ne.time || '').match(/^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$/);
+          if (tr) { ne.time = tr[1]; if (!ne.endTime) ne.endTime = tr[2]; }
           /* confidentiality: client numbers live in notes, never in titles */
           const num = String(ne.title).match(/\d{3,}/);
           if (num) { ne.title = scrubEvTitle(ne.title) || ne.title; if (!(ne.notes || '').includes(num[0])) ne.notes = ((ne.notes ? ne.notes + ' ' : '') + 'Client #' + num[0]).trim(); }
@@ -1831,7 +1833,7 @@ function viewDrop() {
   </div>`;
 }
 function snapImport() { try { const s = JSON.parse(localStorage.getItem('maudehq_undo') || '[]'); s.push({ at: Date.now(), tasks: JSON.parse(JSON.stringify(DB.tasks)), events: JSON.parse(JSON.stringify(DB.events)) }); while (s.length > 3) s.shift(); localStorage.setItem('maudehq_undo', JSON.stringify(s)); } catch (e) {} }
-const scrubEvTitle = t => String(t || '').replace(/\s*[—–|:-]?\s*(Client\s*#?\s*\d{2,}|#\d{2,}|\b\d{3,}\b)\s*/gi, ' ').replace(/\s{2,}/g, ' ').trim();
+const scrubEvTitle = t => String(t || '').replace(/\s*[—–|:-]?\s*(Client\s*#?\s*\d{2,}|#\d{2,}|\b\d{3,}\b)\s*/gi, ' ').replace(/\s{2,}/g, ' ').replace(/^[\s—–|:-]+/, '').trim();
 async function dropSort() {
   const ta = $('#dz-ta'); if (!ta || !ta.value.trim()) { toast('Paste or type something first'); return; }
   if (!DB.settings.apiKey) { toast('This needs your AI key (Settings) — or use “Copy for Claude instead”'); return; }
@@ -2728,6 +2730,15 @@ if (!DB.settings.evpat1) {
   DB.events.forEach(e => { if (PT.test(e.title || '') && e.category !== 'patient') e.category = 'patient'; });
   (DB.dayplan && DB.dayplan.blocks || []).forEach(b => { if (String(b.id).startsWith('ev-') && PT.test(b.title || '')) b.patient = true; });
   DB.settings.evpat1 = true; localStorage.setItem(LS_KEY, JSON.stringify(DB));
+}
+if (!DB.settings.evclean2) {
+  DB.events.forEach(e => { e.title = String(e.title || '').replace(/^[\s—–|:-]+/, '').trim(); const m = String(e.time || '').match(/^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$/); if (m) { e.time = m[1]; if (!e.endTime) e.endTime = m[2]; } });
+  const seen2 = {}; const kept2 = [];
+  for (const e of DB.events) { const k = e.date + '|' + (e.time || '') + '|' + (e.title || '').toLowerCase(); if (seen2[k]) { if (!seen2[k].endTime && e.endTime) seen2[k].endTime = e.endTime; continue; } seen2[k] = e; kept2.push(e); }
+  DB.events = kept2;
+  const ids2 = new Set(DB.events.map(e => 'ev-' + e.id));
+  if (DB.dayplan && DB.dayplan.blocks) DB.dayplan.blocks = DB.dayplan.blocks.filter(b => !String(b.id).startsWith('ev-') || ids2.has(b.id));
+  DB.settings.evclean2 = true; localStorage.setItem(LS_KEY, JSON.stringify(DB));
 }
 if (!DB.settings.evclean1) { /* one-time: merge duplicate appointment slots, move client numbers out of titles */
   const bySlot = {};
