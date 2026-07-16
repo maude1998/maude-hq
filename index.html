@@ -94,7 +94,8 @@
   .rk-row{display:flex;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:grab;user-select:none;transition:box-shadow .15s}
   .rk-row.rk-drag{box-shadow:var(--shadow-lg);border-color:var(--work);cursor:grabbing;z-index:5;position:relative}
   .rk-grip{color:var(--ink-faint);font-size:1rem}
-  .bk-modal{max-width:820px !important;width:94vw}
+  .bk-modal{max-width:1150px !important;width:96vw;max-height:92vh;overflow-y:auto}
+  #bk-wrap .bk-zone.bk-tray{max-height:34vh;overflow-y:auto}
   #bk-wrap{display:flex;flex-direction:column;gap:12px;max-height:62vh;overflow-y:auto}
   .bk-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
   .bk-zone{min-height:70px;display:flex;flex-direction:column;gap:6px}
@@ -961,6 +962,7 @@ function taskCard(t, opts = {}) {
       ${t.status !== 'done' ? `
       <button class="focus-btn ${t.focus ? 'on' : ''}" data-act="focus" data-id="${t.id}" title="${t.focus ? 'Take this out of today’s focus targets' : 'Make this one of today’s 3 focus targets'}">🎯</button>
       <button class="pin-btn ${t.pinned ? 'on' : ''}" data-act="pin" data-id="${t.id}" title="${t.pinned ? 'Unpin from the top of Today' : 'Pin to the top of Today — never out of sight, whatever its date'}">📌</button>
+      ${(!t.due || t.due > todayStr()) ? `<button data-act="make-today" data-id="${t.id}" title="Bring this into Today — it becomes due today">⬆</button>` : ''}
       <button data-act="snooze1" data-id="${t.id}" title="Snooze to tomorrow — no guilt">+1d</button>
       <button data-act="wait" data-id="${t.id}" title="${t.status === 'waiting' ? 'You’re no longer waiting — make it yours again' : 'Park it as waiting on someone else'}">⏳</button>` : ''}
     </div>
@@ -1271,8 +1273,8 @@ function rankCands() {
   const t2 = todayStr();
   const all = openTasks().filter(x => x.status === 'open' && !held.includes(x.title.toLowerCase()))
     .sort((a, b2) => ((a.due || '9999') < (b2.due || '9999') ? -1 : (a.due || '9999') > (b2.due || '9999') ? 1 : prioSort2[a.priority] - prioSort2[b2.priority]));
-  const nowish = all.filter(x => x.due && x.due <= t2).slice(0, 12);
-  const upcoming = all.filter(x => !x.due || x.due > t2).slice(0, 6); /* Up-next gets its own seats in the tray */
+  const nowish = all.filter(x => x.due && x.due <= t2);
+  const upcoming = all.filter(x => !x.due || x.due > t2); /* every Up-next item gets a seat */
   return [...nowish, ...upcoming];
 }
 function renderRankBody() {
@@ -2624,6 +2626,7 @@ document.addEventListener('click', e => {
     case 'took-skip': { const d = $('#took-bar'); if (d) d.remove(); break; }
     case 'focus': toggleFocus(id); break;
     case 'wait': toggleWait(id); break;
+    case 'make-today': { const t = getTask(id); if (t) { if (t.due && t.due > todayStr() && !(t.notes || '').includes('Originally due')) t.notes = ((t.notes ? t.notes + ' ' : '') + '(Originally due ' + t.due + ')').trim(); t.due = todayStr(); save(); render(); toast('⬆ In today’s list — original date noted'); } break; }
     case 'snooze1': snooze(id, 1); break;
     case 'pickme': pickForMe(); break;
     case 'pick-accept': { const task = DB.tasks.find(x => x.title === b.dataset.title && x.status === 'open'); if (task) { task.focus = true; save(); } closeModal(); render(); toast('🎯 Locked in.'); break; }
