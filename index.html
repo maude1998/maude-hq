@@ -945,6 +945,7 @@ function taskCard(t, opts = {}) {
         <div class="step ${s.done ? 'on' : ''}"><span class="sbox" data-act="step" data-id="${t.id}" data-i="${i}">✓</span><span class="stxt">${esc(s.txt)}</span></div>`).join('')}</div>` : ''}
       <div class="t-meta">
         <span class="pill p-${t.space}">${t.space === 'work' ? 'Work' : 'Personal'}</span>
+        ${t.status === 'done' ? `<span class="pill" title="When it entered your list and when you finished it">➕ ${new Date(t.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · ⭐ ${new Date(t.doneAt || t.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>` : ''}
         ${pile === 0 ? '<span class="pill p-pile0" title="You ranked this Must — it takes the best diary slots">🔥 Must</span>' : pile === 1 ? '<span class="pill p-pile1" title="You ranked this Should">⚡ Should</span>' : pile === 2 ? '<span class="pill p-pile2" title="You ranked this Can wait">🌊 Can wait</span>' : ''}
         ${t.priority === 'high' ? '<span class="pill p-high">High</span>' : ''}
         ${dl && t.status !== 'done' ? `<span class="pill ${dl.cls}">${dl.txt}</span>` : ''}
@@ -1791,6 +1792,14 @@ function viewToday() {
         <div class="cardlist" style="margin-top:10px">${later.map(x => taskCard(x)).join('')}${nodate.map(x => taskCard(x)).join('')}</div>
       </details>`;
     })()}
+    ${(() => {
+      const w = sortTasks(DB.tasks.filter(x => x.status === 'waiting' && inSpace(x)));
+      if (!w.length) return '';
+      return `<details class="later-box">
+        <summary title="Handed to someone else — parked here so the replies you owe afterwards never vanish. Tap ⏳ on a card to reclaim it">⏳ Waiting on others <span class="n">(${w.length})</span></summary>
+        <div class="cardlist" style="margin-top:10px">${w.map(x => taskCard(x)).join('')}</div>
+      </details>`;
+    })()}
   </div>`;
 }
 function pickForMe() {
@@ -2115,11 +2124,17 @@ function viewWaiting() {
   const list = sortTasks(DB.tasks.filter(x => x.status === 'waiting' && inSpace(x)));
   return `<div class="cardlist">${list.length ? list.map(x => taskCard(x)).join('') : '<div class="empty"><span class="big">⏳</span>You’re not waiting on anyone.</div>'}</div>`;
 }
-function viewDone() {
-  const list = DB.tasks.filter(x => x.status === 'done' && inSpace(x)).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0)).slice(0, 100);
+function doneListHTML() {
+  const q = (window._doneQ || '').toLowerCase();
+  const list = DB.tasks.filter(x => x.status === 'done' && inSpace(x) && (!q || (x.title + ' ' + (x.notes || '')).toLowerCase().includes(q))).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0)).slice(0, 200);
   const groups = {};
   list.forEach(x => { const d = new Date(x.doneAt || x.createdAt).toLocaleDateString('en-CA'); (groups[d] = groups[d] || []).push(x); });
-  return Object.keys(groups).map(d => section(NICE_DAY(d), groups[d])).join('') || '<div class="empty">Nothing completed yet — the first tick feels great.</div>';
+  return Object.keys(groups).map(d => section(NICE_DAY(d), groups[d])).join('') || '<div class="empty">' + (q ? 'No finished task matches “' + esc(window._doneQ) + '”.' : 'Nothing completed yet — the first tick feels great.') + '</div>';
+}
+function refreshDoneList() { const el = document.getElementById('done-list'); if (el) el.innerHTML = doneListHTML(); }
+function viewDone() {
+  return `<div class="quickadd" style="margin-bottom:16px;padding:4px 8px"><input id="done-q" placeholder="🔍 Search everything you’ve ever finished…" value="${esc(window._doneQ || '')}" oninput="window._doneQ=this.value;refreshDoneList()" style="width:100%;border:none;outline:none;padding:10px;font-size:.95rem;background:transparent"></div>
+  <div id="done-list">${doneListHTML()}</div>`;
 }
 function viewTasks() {
   const seg = DB.settings.taskSeg || 'open';
