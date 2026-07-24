@@ -753,14 +753,24 @@ function applyUpdatesText(text) {
       if (Array.isArray(j)) j.forEach(applyDraft);
       else {
         const norm = s => String(s).toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+        const toks = s => new Set(norm(s).split(' ').filter(w => w.length > 3));
+        const inits = s => (String(s).match(/\b[A-Z]\.[A-Z]\.?/g) || []).join(',');
         (j.tasks || []).forEach(nt => {
           if (!nt.title) return;
           const nn = norm(nt.title);
-          const existing = DB.tasks.find(x => {
-            if (x.status === 'done') return false;
+          const fuzzy = x => {
+            const ia = inits(nt.title), ib = inits(x.title);
+            if (ia && ib && ia !== ib) return false; /* different patients are never the same task */
             const xn = norm(x.title);
-            return xn === nn || (nn.length > 15 && xn.length > 15 && (xn.includes(nn) || nn.includes(xn)));
-          });
+            if (xn === nn || (nn.length > 15 && xn.length > 15 && (xn.includes(nn) || nn.includes(xn)))) return true;
+            const a = toks(nt.title), b = toks(x.title);
+            if (a.size < 2 || b.size < 2) return false;
+            let shared = 0; a.forEach(wd => { if (b.has(wd)) shared++; });
+            return shared / Math.min(a.size, b.size) >= 0.6; /* same words, different phrasing = same task */
+          };
+          /* she already DID this recently - a stale preview echo must not resurrect it */
+          if (DB.tasks.some(x => x.status === 'done' && (x.doneAt || 0) > Date.now() - 7 * 864e5 && fuzzy(x))) return;
+          const existing = DB.tasks.find(x => x.status !== 'done' && fuzzy(x));
           ['notes', 'draft', 'context'].forEach(k => { if (nt[k]) nt[k] = sanitizeAI(nt[k]); });
           const mkSteps = arr => (Array.isArray(arr) ? arr : []).map(s => ({ txt: sanitizeAI(s), done: false }));
           if (existing) { if (nt.notes && !existing.notes) { existing.notes = nt.notes; notes++; } if (nt.draft && !existing.draft) { existing.draft = nt.draft; drafts++; } if (nt.context && !existing.context) existing.context = nt.context; if (nt.steps && !(existing.steps || []).length) existing.steps = mkSteps(nt.steps); return; }
@@ -1857,7 +1867,7 @@ async function dropSort() {
       headers: { 'content-type': 'application/json', 'x-api-key': DB.settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
         model: DB.settings.model || 'claude-sonnet-5', max_tokens: 4000,
-        system: 'You convert pasted content into planner updates for Maude Calveley (aesthetics doctor, Ouronyx London). Today is ' + todayStr() + '. PATIENT CONFIDENTIALITY, non-negotiable, two tiers: (1) diary EVENT titles carry the appointment TYPE only (e.g. Initial Consultation, Refinement) - never a name or client number; numbers go in the event notes. (2) TASK titles MUST include the patient INITIALS so Maude knows who they refer to (e.g. "Cliniko note - A.B.", "Set recall in Cliniko - C.D.", "Send treatment plan - E.F.") - initials only, never full names or client numbers in task titles; full identifying context lives in the notes field. Output ONLY valid JSON, no commentary, no code fences: {"tasks":[{"title":"...","space":"work|personal","due":"YYYY-MM-DD or omit","priority":"high|med|low","tag":"patients|press|marketing|admin|medical|family|friends|home","est":minutes,"notes":"who asked, what exactly, any deadline","steps":["only for tasks over ~30 min: 2-5 tiny steps, each startable in under 10 minutes"],"draft":"if this is a message needing a reply, draft it","context":""}],"events":[{"title":"...","date":"YYYY-MM-DD","time":"HH:MM or omit","space":"work|personal","category":"work|medical|social|family|other","location":"","notes":""}]}. Extract every distinct action and appointment. She has ADHD: big tasks MUST come pre-broken into small steps so she can start little by little. For every task created from a message/thread, fill the "context" field with 2-3 sentences of background: who the person is, what the thread history says, and what tone the reply needs. Drafts must follow this voice profile exactly:\n' + (DB.settings.style || DEFAULT_STYLE) + '\n\nHer people/tone notes:\n' + (DB.settings.people || PEOPLE_DEFAULT),
+        system: 'You convert pasted content into planner updates for Maude Calveley (aesthetics doctor, Ouronyx London). Today is ' + todayStr() + '. ALREADY TRACKED - NEVER create a task that duplicates or rephrases any of these existing or recently completed ones: ' + DB.tasks.filter(x => x.status !== 'done' || (x.doneAt || 0) > Date.now() - 7 * 864e5).map(x => x.title).join('; ').slice(0, 1800) + '. WHATSAPP RULE: only act on chats explicitly marked with an unread count (e.g. "1 unread message"); chats without an unread marker are already handled, ignore their previews entirely. PATIENT CONFIDENTIALITY, non-negotiable, two tiers: (1) diary EVENT titles carry the appointment TYPE only (e.g. Initial Consultation, Refinement) - never a name or client number; numbers go in the event notes. (2) TASK titles MUST include the patient INITIALS so Maude knows who they refer to (e.g. "Cliniko note - A.B.", "Set recall in Cliniko - C.D.", "Send treatment plan - E.F.") - initials only, never full names or client numbers in task titles; full identifying context lives in the notes field. Output ONLY valid JSON, no commentary, no code fences: {"tasks":[{"title":"...","space":"work|personal","due":"YYYY-MM-DD or omit","priority":"high|med|low","tag":"patients|press|marketing|admin|medical|family|friends|home","est":minutes,"notes":"who asked, what exactly, any deadline","steps":["only for tasks over ~30 min: 2-5 tiny steps, each startable in under 10 minutes"],"draft":"if this is a message needing a reply, draft it","context":""}],"events":[{"title":"...","date":"YYYY-MM-DD","time":"HH:MM or omit","space":"work|personal","category":"work|medical|social|family|other","location":"","notes":""}]}. Extract every distinct action and appointment. She has ADHD: big tasks MUST come pre-broken into small steps so she can start little by little. For every task created from a message/thread, fill the "context" field with 2-3 sentences of background: who the person is, what the thread history says, and what tone the reply needs. Drafts must follow this voice profile exactly:\n' + (DB.settings.style || DEFAULT_STYLE) + '\n\nHer people/tone notes:\n' + (DB.settings.people || PEOPLE_DEFAULT),
         messages: [{ role: 'user', content: ta.value.slice(0, 26000) }]
       })
     });
